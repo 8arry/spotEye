@@ -6,6 +6,8 @@ Monitor W|27 student apartments for new listings and send email notifications
 
 import json
 import logging
+import os
+import re
 import smtplib
 import time
 from datetime import datetime
@@ -195,27 +197,13 @@ class SpotEyeMonitor:
     def _extract_apartment_data(self, element) -> Optional[Dict]:
         """Extract apartment data from a single element"""
         try:
-            # This is a basic implementation - will need to be adjusted based on actual page structure
-            apartment_data = {
-                'id': None,
-                'floor': None,
-                'type': None,
-                'price': None,
-                'location': None,
-                'availability': None,
-                'scraped_at': datetime.now().isoformat()
-            }
-            
-            # Try to extract text content and look for patterns
             text_content = element.text.strip()
             
             if not text_content:
                 return None
             
-            # Basic pattern matching for apartment info
-            # This will need to be refined based on actual website structure
-            apartment_data['raw_text'] = text_content
-            apartment_data['id'] = hash(text_content)  # Temporary ID based on content
+            # Parse the apartment information from the text
+            apartment_data = self._parse_apartment_text(text_content)
             
             # Log the raw content for analysis
             self.logger.debug(f"Extracted apartment text: {text_content[:100]}...")
@@ -226,20 +214,177 @@ class SpotEyeMonitor:
             self.logger.error(f"Error extracting apartment data: {e}")
             return None
     
+    def _parse_apartment_text(self, text: str) -> Dict:
+        """Parse apartment text into structured data"""
+        apartment_data = {
+            'id': None,
+            'floor': None,
+            'apartment_number': None,
+            'type': None,
+            'balcony': None,
+            'location': None,
+            'size': None,
+            'price': None,
+            'availability': None,
+            'available_date': None,
+            'barrier_free': False,
+            'raw_text': text,
+            'scraped_at': datetime.now().isoformat()
+        }
+        
+        # Split text into lines
+        lines = [line.strip() for line in text.split('\n') if line.strip()]
+        
+        if not lines:
+            return apartment_data
+        
+        # Parse first line: "Floor/ ApartmentNumber Type, balcony Location Size Price"
+        # Example: "3/ 309 Single, balcony Inner courtyard 27.17 520.50"
+        first_line = lines[0]
+        
+        # Extract floor and apartment number
+        floor_match = re.match(r'(\d+)/\s*(\d+)', first_line)
+        if floor_match:
+            apartment_data['floor'] = floor_match.group(1)
+            apartment_data['apartment_number'] = floor_match.group(2)
+            apartment_data['id'] = f"{apartment_data['floor']}-{apartment_data['apartment_number']}"
+        
+        # Extract type (Single, Partner)
+        if 'Single' in first_line:
+            apartment_data['type'] = 'Single'
+        elif 'Partner' in first_line:
+            apartment_data['type'] = 'Partner'
+        
+        # Extract balcony information
+        if 'no balcony' in first_line:
+            apartment_data['balcony'] = 'no'
+        elif 'balcony' in first_line:
+            apartment_data['balcony'] = 'yes'
+            
+        # Check for barrier-free
+        if 'barrier-free' in first_line:
+            apartment_data['barrier_free'] = True
+        
+        # Extract location (Inner courtyard, Wilhelmstraße, Südstraße)
+        location_patterns = [
+            r'Inner courtyard',
+            r'Wilhelmstraße',
+            r'Südstraße'
+        ]
+        for pattern in location_patterns:
+            if re.search(pattern, first_line):
+                apartment_data['location'] = pattern.replace('ß', 'ss')  # Normalize
+                break
+        
+        # Extract size and price (last two numbers in the first line)
+        numbers = re.findall(r'\d+\.\d+', first_line)
+        if len(numbers) >= 2:
+            apartment_data['size'] = float(numbers[-2])  # Second to last number (size in m²)
+            apartment_data['price'] = float(numbers[-1])  # Last number (price in euros)
+        
+        # Parse availability status
+        if len(lines) > 1:
+            status_line = lines[1]
+            if 'Already taken' in status_line:
+                apartment_data['availability'] = 'taken'
+            elif 'Soon available' in status_line:
+                apartment_data['availability'] = 'soon'
+                # Extract available date if present
+                if len(lines) > 2:
+                    date_line = lines[2]
+                    date_match = re.match(r'(\d{4}-\d{2}-\d{2})', date_line)
+                    if date_match:
+                        apartment_data['available_date'] = date_match.group(1)
+            elif 'Apply now' in status_line:
+                apartment_data['availability'] = 'available'
+            else:
+                apartment_data['availability'] = 'unknown'
+        
+        return apartment_data
+    
     def load_historical_data(self) -> Dict:
         """Load historical data from file"""
-        # TODO: Implement in step 3
-        pass
+        try:
+            if os.path.exists(self.data_file):
+                with open(self.data_file, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    self.logger.info(f"Loaded historical data with {len(data.get('apartments', []))} apartments")
+                    return data
+            else:
+                self.logger.info("No historical data file found, starting fresh")
+                return {'apartments': [], 'last_check': None}
+        except Exception as e:
+            self.logger.error(f"Error loading historical data: {e}")
+            return {'apartments': [], 'last_check': None}
     
     def save_data(self, data: Dict):
         """Save data to file"""
-        # TODO: Implement in step 3
-        pass
+        try:
+            with open(self.data_file, 'w', encoding='utf-8') as f:
+                json.dump(data, f, indent=2, ensure_ascii=False)
+            self.logger.info(f"Saved {len(data.get('apartments', []))} apartments to {self.data_file}")
+        except Exception as e:
+            self.logger.error(f"Error saving data: {e}")
     
     def detect_changes(self, current_data: List[Dict], historical_data: Dict) -> List[Dict]:
         """Detect changes between current and historical data"""
-        # TODO: Implement in step 3
-        pass
+        historical_apartments = historical_data.get('apartments', [])
+        
+        # Create dictionaries for easy lookup
+        historical_dict = {apt.get('id'): apt for apt in historical_apartments if apt.get('id')}
+        current_dict = {apt.get('id'): apt for apt in current_data if apt.get('id')}
+        
+        new_apartments = []
+        changed_apartments = []
+        
+        for apt_id, current_apt in current_dict.items():
+            if apt_id not in historical_dict:
+                # Completely new apartment
+                new_apartments.append({
+                    'type': 'new',
+                    'apartment': current_apt
+                })
+                self.logger.info(f"New apartment found: {apt_id}")
+                
+            else:
+                # Check if availability status changed
+                historical_apt = historical_dict[apt_id]
+                historical_status = historical_apt.get('availability')
+                current_status = current_apt.get('availability')
+                
+                if historical_status != current_status:
+                    # Status changed
+                    if current_status in ['soon', 'available'] and historical_status == 'taken':
+                        # Changed from taken to available - this is important!
+                        changed_apartments.append({
+                            'type': 'status_change',
+                            'apartment': current_apt,
+                            'old_status': historical_status,
+                            'new_status': current_status
+                        })
+                        self.logger.info(f"Status change: {apt_id} from {historical_status} to {current_status}")
+                    
+                # Check if available date changed
+                historical_date = historical_apt.get('available_date')
+                current_date = current_apt.get('available_date')
+                
+                if historical_date != current_date and current_date:
+                    changed_apartments.append({
+                        'type': 'date_change',
+                        'apartment': current_apt,
+                        'old_date': historical_date,
+                        'new_date': current_date
+                    })
+                    self.logger.info(f"Date change: {apt_id} from {historical_date} to {current_date}")
+        
+        all_changes = new_apartments + changed_apartments
+        
+        if all_changes:
+            self.logger.info(f"Found {len(new_apartments)} new apartments and {len(changed_apartments)} changes")
+        else:
+            self.logger.info("No new apartments or changes detected")
+            
+        return all_changes
     
     def send_notification(self, new_apartments: List[Dict]):
         """Send email notification for new apartments"""
