@@ -4,18 +4,33 @@ SpotEye Configuration Module
 Centralized configuration for all application components
 """
 
+import os
 from typing import Dict
+
+
+def load_env_file():
+    """Load environment variables from .env file if it exists"""
+    if os.path.exists('.env'):
+        with open('.env', 'r', encoding='utf-8') as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith('#') and '=' in line:
+                    key, value = line.split('=', 1)
+                    os.environ[key.strip()] = value.strip()
 
 
 def get_config() -> Dict:
     """Get complete configuration for SpotEye application"""
+    # Load environment variables from .env file if available
+    load_env_file()
+    
     return {
         'email': {
             'smtp_server': 'smtp.gmail.com',
             'smtp_port': 587,
-            'smtp_user': 'tanga6998@gmail.com',  # Sender email address
-            'smtp_password': 'idylhzpoddvbwqhu',  # Gmail app-specific password
-            'recipient_email': 'tr1173309602@gmail.com'  # Recipient email address
+            'smtp_user': os.environ.get('SMTP_USER', 'tanga6998@gmail.com'),  # Sender email address
+            'smtp_password': os.environ.get('SMTP_PASSWORD', ''),  # Gmail app-specific password from env
+            'recipient_email': os.environ.get('RECIPIENT_EMAIL', 'tr1173309602@gmail.com')  # Recipient email address
         },
         
         'monitoring': {
