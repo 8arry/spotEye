@@ -35,7 +35,7 @@ def get_config() -> Dict:
         
         'monitoring': {
             'target_url': 'https://www.apartments-hn.de/en/book-apartment',
-            'check_interval': 30,  # Check interval in minutes
+            'check_interval': 3,  # Check interval in minutes (changed to 3 minutes for immediate notifications)
             'retry_attempts': 3,   # Number of retry attempts on failure
             'timeout': 30,         # Page load timeout in seconds
             'wait_for_data': 10    # Wait time for data loading in seconds
