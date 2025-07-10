@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 """
-SpotEye Cloud Service - Web interface for Cloud Run deployment
-Handles HTTP triggers from Cloud Scheduler for apartment monitoring
+SpotEye Cloud Service - 24/7 Continuous Monitoring
+Runs continuous apartment monitoring as a background service
 """
 
+import asyncio
 import json
 import logging
 import os
 from datetime import datetime
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import JSONResponse
 
@@ -15,12 +17,10 @@ from fastapi.responses import JSONResponse
 from main import SpotEyeMonitor
 from config import get_config
 
-# Initialize FastAPI app
-app = FastAPI(
-    title="SpotEye Apartment Monitor",
-    description="24/7 automated monitoring system for W|27 German student apartments",
-    version="1.0.0"
-)
+# Global variables for managing the monitoring task
+monitor_instance = None
+monitoring_task = None
+is_monitoring_active = False
 
 # Configure logging for cloud environment
 logging.basicConfig(
@@ -29,40 +29,108 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+
+async def continuous_monitoring():
+    """Background task for continuous apartment monitoring"""
+    global monitor_instance, is_monitoring_active
+    
+    logger.info("Starting 24/7 continuous monitoring...")
+    
+    # Initialize monitor instance
+    monitor_instance = SpotEyeMonitor()
+    config = get_config()
+    interval_minutes = config['monitoring']['check_interval']
+    interval_seconds = interval_minutes * 60
+    
+    is_monitoring_active = True
+    
+    while is_monitoring_active:
+        try:
+            logger.info("=== Running apartment monitoring check ===")
+            monitor_instance.run_once()
+            logger.info(f"Monitoring check completed. Next check in {interval_minutes} minutes.")
+            
+            # Wait for next check using asyncio.sleep (non-blocking)
+            await asyncio.sleep(interval_seconds)
+            
+        except Exception as e:
+            logger.error(f"Error in continuous monitoring: {e}")
+            logger.info(f"Retrying in {interval_minutes} minutes...")
+            await asyncio.sleep(interval_seconds)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Application lifespan manager to handle startup and shutdown"""
+    global monitoring_task
+    
+    # Startup: Start the continuous monitoring task
+    logger.info("SpotEye service starting up...")
+    monitoring_task = asyncio.create_task(continuous_monitoring())
+    
+    yield
+    
+    # Shutdown: Stop the monitoring task
+    logger.info("SpotEye service shutting down...")
+    global is_monitoring_active
+    is_monitoring_active = False
+    if monitoring_task:
+        monitoring_task.cancel()
+        try:
+            await monitoring_task
+        except asyncio.CancelledError:
+            pass
+
+
+# Initialize FastAPI app with lifespan manager
+app = FastAPI(
+    title="SpotEye Apartment Monitor",
+    description="24/7 continuous monitoring system for W|27 German student apartments",
+    version="2.0.0",
+    lifespan=lifespan
+)
+
+
 @app.get("/")
 async def health_check():
     """Health check endpoint for Cloud Run"""
+    global is_monitoring_active, monitor_instance
+    
+    status = "active" if is_monitoring_active else "inactive"
+    
     return {
         'status': 'healthy',
         'service': 'SpotEye Apartment Monitor',
+        'monitoring_status': status,
         'timestamp': datetime.now().isoformat(),
-        'version': '1.0.0'
+        'version': '2.0.0',
+        'mode': '24/7 Continuous Monitoring'
     }
+
 
 @app.post("/monitor")
 @app.get("/monitor")
-async def trigger_monitoring(request: Request):
-    """Main monitoring endpoint - triggered by Cloud Scheduler"""
+async def trigger_manual_monitoring(request: Request):
+    """Manual monitoring trigger endpoint (for testing purposes)"""
+    global monitor_instance
+    
     try:
-        logger.info("=== SpotEye monitoring triggered ===")
+        logger.info("=== Manual monitoring trigger ===")
         
-        # Check for Cloud Scheduler headers
-        scheduler_job = request.headers.get('X-CloudScheduler-JobName')
-        if scheduler_job:
-            logger.info(f"Triggered by Cloud Scheduler job: {scheduler_job}")
+        # Use existing monitor instance or create new one
+        if not monitor_instance:
+            monitor_instance = SpotEyeMonitor()
         
-        # Initialize and run monitoring
-        monitor = SpotEyeMonitor()
-        monitor.run_once()
+        monitor_instance.run_once()
         
         # Get current statistics
-        historical_data = monitor.storage.load_historical_data()
+        historical_data = monitor_instance.storage.load_historical_data()
         apartments = historical_data.get('apartments', [])
-        stats = monitor.storage.get_statistics(apartments)
+        stats = monitor_instance.storage.get_statistics(apartments)
         
         response_data = {
             'status': 'success',
-            'message': 'Monitoring completed successfully',
+            'message': 'Manual monitoring completed successfully',
             'timestamp': datetime.now().isoformat(),
             'statistics': {
                 'total_apartments': stats['total'],
@@ -71,36 +139,43 @@ async def trigger_monitoring(request: Request):
             }
         }
         
-        logger.info(f"Monitoring completed - Total: {stats['total']}, "
+        logger.info(f"Manual monitoring completed - Total: {stats['total']}, "
                    f"Available: {stats['by_status'].get('available', 0)}, "
                    f"Soon: {stats['by_status'].get('soon', 0)}")
         
         return response_data
         
     except Exception as e:
-        logger.error(f"Monitoring failed: {str(e)}")
+        logger.error(f"Manual monitoring failed: {str(e)}")
         raise HTTPException(
             status_code=500,
             detail={
                 'status': 'error',
-                'message': f'Monitoring failed: {str(e)}',
+                'message': f'Manual monitoring failed: {str(e)}',
                 'timestamp': datetime.now().isoformat()
             }
         )
 
+
 @app.get("/status")
 async def get_status():
-    """Get current system status"""
+    """Get current system status and apartment data"""
+    global is_monitoring_active, monitor_instance
+    
     try:
-        # Initialize monitor (but don't run)
-        monitor = SpotEyeMonitor()
+        # Use existing monitor instance or create new one
+        if not monitor_instance:
+            monitor_instance = SpotEyeMonitor()
         
         # Load current data
-        historical_data = monitor.storage.load_historical_data()
+        historical_data = monitor_instance.storage.load_historical_data()
         apartments = historical_data.get('apartments', [])
         
+        config = get_config()
+        interval_minutes = config['monitoring']['check_interval']
+        
         if apartments:
-            stats = monitor.storage.get_statistics(apartments)
+            stats = monitor_instance.storage.get_statistics(apartments)
             
             # Filter for soon/available apartments
             soon_available = [
@@ -110,6 +185,8 @@ async def get_status():
             
             return {
                 'status': 'success',
+                'monitoring_status': 'active' if is_monitoring_active else 'inactive',
+                'monitoring_interval_minutes': interval_minutes,
                 'timestamp': datetime.now().isoformat(),
                 'statistics': {
                     'total_apartments': stats['total'],
@@ -123,6 +200,8 @@ async def get_status():
         else:
             return {
                 'status': 'success',
+                'monitoring_status': 'active' if is_monitoring_active else 'inactive',
+                'monitoring_interval_minutes': interval_minutes,
                 'message': 'No apartment data available yet',
                 'timestamp': datetime.now().isoformat()
             }
@@ -138,12 +217,17 @@ async def get_status():
             }
         )
 
+
 @app.post("/test-email")
 async def test_email():
     """Test email notification system"""
+    global monitor_instance
+    
     try:
-        monitor = SpotEyeMonitor()
-        success = monitor.test_email()
+        if not monitor_instance:
+            monitor_instance = SpotEyeMonitor()
+            
+        success = monitor_instance.test_email()
         
         return {
             'status': 'success' if success else 'failed',
@@ -162,6 +246,7 @@ async def test_email():
                 'timestamp': datetime.now().isoformat()
             }
         )
+
 
 if __name__ == '__main__':
     import uvicorn

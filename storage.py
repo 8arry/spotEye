@@ -57,12 +57,16 @@ class ApartmentStorage:
         
         for apt_id, current_apt in current_dict.items():
             if apt_id not in historical_dict:
-                # Completely new apartment
-                new_apartments.append({
-                    'type': 'new',
-                    'apartment': current_apt
-                })
-                self.logger.info(f"New apartment found: {apt_id}")
+                # Only treat as "new" if it's actually interesting (available/soon)
+                # Skip if it's just a "taken" apartment on first run
+                if current_apt.get('availability') in ['available', 'soon'] or len(historical_apartments) > 0:
+                    new_apartments.append({
+                        'type': 'new',
+                        'apartment': current_apt
+                    })
+                    self.logger.info(f"New apartment found: {apt_id}")
+                else:
+                    self.logger.debug(f"Skipping taken apartment on initial load: {apt_id}")
                 
             else:
                 # Check if availability status changed
