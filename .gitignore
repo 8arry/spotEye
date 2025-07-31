@@ -3,6 +3,8 @@ DEPLOYMENT_GUIDE.md
 README.md
 email_preview.html
 deploy.sh
+deploy.ps1
+MONITORING_DEPLOYMENT_GUIDE.md
 # ===== Data and Logs =====
 # Don't commit sensitive or temporary data
 apartment_data.json

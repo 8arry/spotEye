@@ -21,7 +21,8 @@ steps:
     - '--cpu=1'
     - '--timeout=900'
     - '--max-instances=1'
-    - '--min-instances=0'
+    - '--min-instances=1'
+    - '--cpu-throttling'
     - '--set-env-vars=SMTP_USER=your-sender@gmail.com,SMTP_PASSWORD=REDACTED,RECIPIENT_EMAIL=your-recipient@example.com'
 
 images:

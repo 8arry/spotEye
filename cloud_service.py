@@ -66,7 +66,12 @@ async def lifespan(app: FastAPI):
     
     # Startup: Start the continuous monitoring task
     logger.info("SpotEye service starting up...")
-    monitoring_task = asyncio.create_task(continuous_monitoring())
+    # Only start continuous monitoring if explicitly enabled via environment variable
+    if os.environ.get('ENABLE_CONTINUOUS_MONITORING', 'false').lower() == 'true':
+        logger.info("Continuous monitoring enabled via environment variable")
+        monitoring_task = asyncio.create_task(continuous_monitoring())
+    else:
+        logger.info("Continuous monitoring disabled - using on-demand mode")
     
     yield
     
@@ -97,14 +102,26 @@ async def health_check():
     global is_monitoring_active, monitor_instance
     
     status = "active" if is_monitoring_active else "inactive"
+    continuous_mode = os.environ.get('ENABLE_CONTINUOUS_MONITORING', 'false').lower() == 'true'
+    
+    # Get last successful check time
+    last_check = "Never"
+    if monitor_instance:
+        try:
+            historical_data = monitor_instance.storage.load_historical_data()
+            last_check = historical_data.get('last_check', 'Never')
+        except:
+            pass
     
     return {
         'status': 'healthy',
         'service': 'SpotEye Apartment Monitor',
         'monitoring_status': status,
+        'continuous_monitoring_enabled': continuous_mode,
+        'last_successful_check': last_check,
         'timestamp': datetime.now().isoformat(),
         'version': '2.0.0',
-        'mode': '24/7 Continuous Monitoring'
+        'mode': 'Continuous Background' if continuous_mode else 'On-Demand Trigger'
     }
 
 
