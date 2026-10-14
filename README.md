@@ -35,7 +35,9 @@ python main.py --status       # show stored data and status
 ## Deploy
 
 ```bash
-gcloud builds submit --config cloudbuild.yaml
+echo -n "<gmail-app-password>" | gcloud secrets create spoteye-smtp-password --data-file=-
+gcloud builds submit --config cloudbuild.yaml \
+  --substitutions=_SMTP_USER=<sender@gmail.com>,_RECIPIENT_EMAIL=<recipient@example.com>
 ```
 
 Set `ENABLE_CONTINUOUS_MONITORING=true` on the Cloud Run service to start the background loop.

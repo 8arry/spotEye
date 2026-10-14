@@ -1,6 +1,5 @@
 # SpotEye Project .gitignore
 DEPLOYMENT_GUIDE.md
-README.md
 email_preview.html
 deploy.sh
 deploy.ps1

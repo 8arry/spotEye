@@ -23,7 +23,12 @@ steps:
     - '--max-instances=1'
     - '--min-instances=1'
     - '--cpu-throttling'
-    - '--set-env-vars=SMTP_USER=your-sender@gmail.com,SMTP_PASSWORD=REDACTED,RECIPIENT_EMAIL=your-recipient@example.com'
+    - '--set-env-vars=SMTP_USER=${_SMTP_USER},RECIPIENT_EMAIL=${_RECIPIENT_EMAIL}'
+    - '--set-secrets=SMTP_PASSWORD=spoteye-smtp-password:latest'
 
 images:
   - 'gcr.io/$PROJECT_ID/spoteye-monitor:$BUILD_ID' 
+
+substitutions:
+  _SMTP_USER: ''
+  _RECIPIENT_EMAIL: ''

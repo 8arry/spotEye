@@ -28,9 +28,9 @@ def get_config() -> Dict:
         'email': {
             'smtp_server': 'smtp.gmail.com',
             'smtp_port': 587,
-            'smtp_user': os.environ.get('SMTP_USER', 'your-sender@gmail.com'),  # Sender email address
+            'smtp_user': os.environ.get('SMTP_USER', ''),  # Sender email address
             'smtp_password': os.environ.get('SMTP_PASSWORD', ''),  # Gmail app-specific password from env
-            'recipient_email': os.environ.get('RECIPIENT_EMAIL', 'your-recipient@example.com')  # Recipient email address
+            'recipient_email': os.environ.get('RECIPIENT_EMAIL', '')  # Recipient email address
         },
         
         'monitoring': {

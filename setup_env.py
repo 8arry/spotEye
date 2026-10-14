@@ -13,7 +13,7 @@ def create_env_file():
     env_content = """# SpotEye Environment Variables
 # Email Configuration
 SMTP_USER=your-sender@gmail.com
-SMTP_PASSWORD=REDACTED
+SMTP_PASSWORD=your-gmail-app-password
 RECIPIENT_EMAIL=your-recipient@example.com
 
 # Optional: Override default monitoring settings
@@ -26,8 +26,7 @@ RECIPIENT_EMAIL=your-recipient@example.com
     
     print("✅ .env file created successfully!")
     print("📧 Email configuration:")
-    print("   SMTP_USER: your-sender@gmail.com")
-    print("   RECIPIENT_EMAIL: your-recipient@example.com")
+    print("   Edit .env and fill in SMTP_USER, SMTP_PASSWORD and RECIPIENT_EMAIL")
     print("")
     print("🔒 Security note: .env file contains sensitive information")
     print("   Make sure it's in .gitignore to avoid committing passwords")
